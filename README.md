@@ -1,7 +1,12 @@
-# Perception Tools Dev Log
+# Perception Tools Development Log
 
-| Pengfei LIU |
-| ----------- |
+| Pengfei LIU                                                  |
+| ------------------------------------------------------------ |
+| Intern Developer Engineer - Ampere Software Technology - Renault Group |
+
+[TOC]
+
+
 
 ## MDF signal conversion
 
@@ -301,7 +306,7 @@ SUP_DBG_IFDBG_OUT_Output_data_Dev_FUSION3_previousT0obj_yaw
 
 After selecting the test path, the tool invokes the scripts `inputFormat.m` to preprocess the data in the .mat files. Due to the different signal names in SWEET 420 and the algorithm added during encoding to shorten signal names, many signals, especially radar signals, cannot be correctly recognized. Consequently, by comparing changes in signal names, we have modified these two scripts to recognize the new signals.
 
-### `ldc_Distance_y`
+### Rename certain signal
 
 We had the problem as :
 
@@ -459,6 +464,477 @@ The names of the joined fields include :
 `radObjects.AbsoluteLongiAccelerationObject`
 
 Since many signal names have changed a lot, there is no means for me to know the relationship between them, and there may also be newly added or removed signals. At present, I modified only these three signal names, so that can already meet the execution of the subsequent program and the basic radar signal identification, if the subsequent found that there are missing radar signals, consider here to retrieve the missing signals.
+
+#### Modification of initial path
+
+Developing functions requires frequent tests, and work can be saved by modifying the behaviour of `BrowseButtonPushed` to set the `initpath` to a usual capsule storage path. This function is located in `PPLon_app.mlapp` and could be modified by App Designer.
+
+<img src="C:\Users\p126620\OneDrive - Alliance\Bureau\DEV LOG\assets\toolui.png" alt="toolui" style="zoom: 40%;" />
+
+![image-20240611145957950](C:\Users\p126620\OneDrive - Alliance\Bureau\DEV LOG\assets\image-20240611145957950.png)
+
+```matlab
+% Button pushed function: BrowseButton
+function BrowseButtonPushed(app, event)
+    if ~isempty(app.testPath) && ~isequal(app.testPath,0)
+        initPath = fullfile(app.testPath,'..');
+    else
+        initPath = 'C:\Users\p126620\OneDrive - Alliance\Bureau\MATLAB\CAPSULES_FOR_TEST';
+    end
+    app.testPathList = uigetfile_n_dir(initPath);
+    if ~isempty(app.testPathList)
+        app.TestPathDropDown.Items = app.testPathList;
+        app.TestPathDropDown.Value = app.testPathList{1};
+        app.testPath               = app.TestPathDropDown.Value;
+        changeTestPath(app);
+    end
+end
+```
+
+#### Compability optimization
+
+In order to harmonise with a colleague's version of the tool, I've updated the Radar Raw Objects section within the tool to store it in a `logConverted.radObjects.(fieldName)` structure. These codes are instead run in `inputFormat_C1A_HS.m` and invoked by `inputFormat_v2.m`.
+
+```matlab
+% Create Radar raw objects
+radarObjectSignals = sigNames(contains(sigNames, 'IRadar') & ~cellfun(@isempty, regexp(sigNames, '^IRadar.*\d{2}$'))); % the signal begin with 'IRadar' and ends with two digits
+radarObjectNames = unique(cellfun(@(x) regexprep(x, '^IRadar.*_(\d{2})$', 'IRadar_Object$1'), radarObjectSignals, 'UniformOutput', false));
+numObjects = 64; % SWEET420
+% radObjects(1:numObjects) = struct();
+logConverted.radObjects = struct();
+for i = 1:numel(radarObjectSignals)
+    signalName = radarObjectSignals{i};
+    objectNumberMatch = regexp(signalName, '_(\d{2})$', 'tokens', 'once');
+    objectNumber = str2double(objectNumberMatch{1});
+    fieldNameMatch = regexp(signalName, '^IRadar(.*?)_', 'tokens', 'once');
+    fieldName = fieldNameMatch{1};
+    logConverted.radObjects(objectNumber + 1).(fieldName) = log.(signalName);
+end
+for i = 1:numObjects
+    if isfield(logConverted.radObjects(i), 'LongiDistanceObject')
+        logConverted.radObjects(i).LongitudinalDistanceObject = logConverted.radObjects(i).LongiDistanceObject;
+    end
+end
+for i = 1:numObjects
+    if isfield(logConverted.radObjects(i), 'AbsLongiVelocityObject')
+        logConverted.radObjects(i).AbsoluteLongiVelocityObject = logConverted.radObjects(i).AbsLongiVelocityObject;
+    end
+end
+for i = 1:numObjects
+    if isfield(logConverted.radObjects(i), 'AbsLongiAccelObject')
+        logConverted.radObjects(i).AbsoluteLongiAccelerationObject = logConverted.radObjects(i).AbsLongiAccelObject;
+    end
+end
+```
+
+#### Import of Radar ACC signal
+
+The Radar ACC signal is an object to be used in the vehicle's adaptive cruise control (ACC) function, which is marked in light yellow in Birdview :
+
+```matlab
+Radar_ObjectAcc00_RadarAbsoluteLatAccelerationObject       
+Radar_ObjectAcc00_RadarAbsoluteLatAccelerationObjectVAR    
+Radar_ObjectAcc00_RadarAbsoluteLatVelocityObject           
+Radar_ObjectAcc00_RadarAbsoluteLatVelocityObjectVAR        
+Radar_ObjectAcc00_RadarAbsoluteLongiAccelerationObject     
+Radar_ObjectAcc00_RadarAbsoluteLongiAccelerationObjectVAR  
+Radar_ObjectAcc00_RadarAbsoluteLongiVelocityObject         
+Radar_ObjectAcc00_RadarAbsoluteLongiVelocityObjectVAR      
+Radar_ObjectAcc00_RadarAgeObject                           
+Radar_ObjectAcc00_RadarAnchorPointObject                   
+Radar_ObjectAcc00_RadarAzimuthObject                       
+Radar_ObjectAcc00_RadarAzimuthObjectVAR                    
+Radar_ObjectAcc00_RadarCIPVobject                          
+Radar_ObjectAcc00_RadarClassificationObject                
+Radar_ObjectAcc00_RadarCrossSectionObject                  
+Radar_ObjectAcc00_RadarCutInOutObject                      
+Radar_ObjectAcc00_RadarElevDistanceObject                  
+Radar_ObjectAcc00_RadarElevDistanceObjectVAR               
+Radar_ObjectAcc00_RadarExistenceProbObject                 
+Radar_ObjectAcc00_RadarHeadingAngleObject                  
+Radar_ObjectAcc00_RadarHeadingAngleObjectVAR               
+Radar_ObjectAcc00_RadarIDobject                            
+Radar_ObjectAcc00_RadarLaneAssignmentObject                
+Radar_ObjectAcc00_RadarLateralDistanceObject               
+Radar_ObjectAcc00_RadarLateralDistanceObjectVAR            
+Radar_ObjectAcc00_RadarLengthObject                        
+Radar_ObjectAcc00_RadarLengthObjectVAR                     
+Radar_ObjectAcc00_RadarLongitudinalDistanceObject          
+Radar_ObjectAcc00_RadarLongitudinalDistanceObjectVAR       
+Radar_ObjectAcc00_RadarMotionStatusObject                  
+Radar_ObjectAcc00_RadarPredictedImpactLocationObject       
+Radar_ObjectAcc00_RadarProba2WheelerObject                 
+Radar_ObjectAcc00_RadarProba4WheelerObject                 
+Radar_ObjectAcc00_RadarProbaCarObject                      
+Radar_ObjectAcc00_RadarProbaMovableObject                  
+Radar_ObjectAcc00_RadarProbaNonObstacleObject              
+Radar_ObjectAcc00_RadarProbaObstacleObject                 
+Radar_ObjectAcc00_RadarProbaPedestrianObject               
+Radar_ObjectAcc00_RadarProbaTruckObject                    
+Radar_ObjectAcc00_RadarRelativeLatAccelerationObject       
+Radar_ObjectAcc00_RadarRelativeLatAccelerationObjectVAR    
+Radar_ObjectAcc00_RadarRelativeLatVelocityObject           
+Radar_ObjectAcc00_RadarRelativeLatVelocityObjectVAR        
+Radar_ObjectAcc00_RadarRelativeLongiAccelerationObject     
+Radar_ObjectAcc00_RadarRelativeLongiAccelerationObjectVAR  
+Radar_ObjectAcc00_RadarRelativeLongiVelocityObject         
+Radar_ObjectAcc00_RadarRelativeLongiVelocityObjectVAR      
+Radar_ObjectAcc00_RadarStatusObject                        
+Radar_ObjectAcc00_RadarTimeToCollisionObject               
+Radar_ObjectAcc00_RadarTimestampObject                     
+Radar_ObjectAcc00_RadarWidthObject                         
+Radar_ObjectAcc00_RadarWidthObjectVAR
+```
+
+In SWEET 200, the signals for Radar ACC are individually named and clearly labelled as shown below.
+The signals for the ACC object in SWEET 200 are imported by the following code :
+
+```matlab
+% Create Radar ACC structs
+radarObjectAccSignals = sigNames(contains(sigNames,'Radar_ObjectAcc00') & ~endsWith(sigNames,'_Time'));
+for i=1:size(radarObjectAccSignals,1)
+    if scaledRadarObjectSize==1 && contains(radarObjectAccSignals{i},'LengthObject') || contains(radarObjectAccSignals{i},'WidthObject')
+        scale = 1/12.8;
+%       scale = 12.8;
+    else
+        scale = 1;
+    end
+    if ~isequal(radarObjectAccSignals{i}(24),'_')
+        logConverted.radObjectsACC.(radarObjectAccSignals{i}(24:end)) = log.(radarObjectAccSignals{i})*scale;
+    else
+        logConverted.radObjectsACC.(radarObjectAccSignals{i}(25:end)) = log.(radarObjectAccSignals{i})*scale;
+    end
+```
+
+##### Version 1
+
+In SWEET 420, there is no series of signals named by ACC object. Through my investigation, I found that in the radar raw signals, each object contains a signal named `IRadarObjectAccStatusObject_**`, which marks a two-digit number `**` on the time sequence, which indicates that the ACC object for that time is the ACC object in the raw object that ends with `**`.
+As you can see, this way of marking gets more complicated. However, from what I have observed, if there is an ACC signal, this ACC object always appears as the object `06`, so I made some simplifications to the program so that the program directly imports the object `06` as the ACC object. The code is as follows :
+
+```matlab
+% Create Radar ACC structs
+radarObjectAccSignals = sigNames(contains(sigNames, 'IRadar') & ~cellfun(@isempty, regexp(sigNames, '^IRadar.*06$')));
+radarObjectAccNames = unique(cellfun(@(x) regexprep(x, '^IRadar.*_(06)$', 'IRadar_Object$1'), radarObjectSignals, 'UniformOutput', false));
+logConverted.radObjectsACC = struct();
+for i = 1:numel(radarObjectAccSignals)
+    signalName = radarObjectAccSignals{i};
+    objectNumberMatch = regexp(signalName, '_(\d{2})$', 'tokens', 'once');
+    objectNumber = str2double(objectNumberMatch{1});
+    fieldNameMatch = regexp(signalName, '^IRadar(.*?)_', 'tokens', 'once');
+    fieldName = fieldNameMatch{1};
+    if strcmp(fieldName, 'LengthObject') || strcmp(fieldName, 'WidthObject')
+        logConverted.radObjectsACC.(fieldName) = log.(signalName) / 12.8;
+    else
+        logConverted.radObjectsACC.(fieldName) = log.(signalName);
+    end
+end
+if isfield(logConverted,'radObjectsACC')
+    logConverted.radObjectsACC.CIPVobject = logConverted.radObjectsACC.IDobject > 0;
+end
+```
+
+##### Version 2
+
+I requested my colleague to send me additional capsules for testing. However, the results were less than satisfactory. In complex scenarios, this simple algorithm performed inadequately. Countless tests revealed that the last two digits in the signal name represent a sort order of all objects in the raw signal, although the specific criteria of this sorting is unknown, possibly sorted by importance.
+
+There is no fixed correlation between the ACC object and these two digits. Whether it concerns the two-digit signal names or the five-digit object IDs, they're changing constantly. After examining 6281 raw signals, I found two record `IACC_Status` and `targetselectionad_egoppselected`which might associate the ACC object with the signal name. A sample signal is shown as following.
+
+```matlab
+t = 1:length(IACC_Status);
+figure;
+stairs(t, IACC_Status, 'LineWidth', 2);
+ylim([0 10]);
+yticks(0:1:10);
+legend('IACC__Status');
+title('IACC__Status');
+xlabel('Time');
+ylabel('Status');
+grid on;
+```
+
+<img src="C:\Users\p126620\OneDrive - Alliance\Bureau\DEV LOG\assets\untitled.png" alt="untitled" style="zoom:50%;" />
+
+```matlab
+t = 1:length(targetselectionad_egoppselected);
+figure;
+stairs(t, targetselectionad_egoppselected, 'LineWidth', 2);
+ylim([0 10]);
+yticks(0:1:10);
+legend('targetselectionad__egoppselected');
+title('targetselectionad__egoppselected');
+grid on;
+```
+
+<img src="C:\Users\p126620\OneDrive - Alliance\Bureau\DEV LOG\assets\untitled3.png" alt="untitled3" style="zoom:50%;" />
+
+So I made a script to select the ACC object based on `IACC_Status` or `targetselectionad_egoppselected`.
+
+```matlab
+radarObjectAccSignals = sigNames(contains(sigNames, 'IRadar') & ~cellfun(@isempty, regexp(sigNames, '^IRadar.*\d{2}$')));
+radarObjectAccNames = unique(cellfun(@(x) regexprep(x, '^IRadar(.*?)_\d{2}$', '$1'), radarObjectAccSignals, 'UniformOutput', false));
+logConverted.radObjectsACC = struct();
+for n = 1:length(radarObjectAccNames)
+    logConverted.radObjectsACC.(radarObjectAccNames{n}) = [];
+end
+for i = 1:length(log.targetselectionad_egoppselected)
+    num = log.targetselectionad_egoppselected(i);
+    pattern = sprintf('^IRadar.*_%02d$', num); 
+    matchSignal = radarObjectAccSignals(contains(radarObjectAccSignals, sprintf('_%02d', num)));
+    for j = 1:length(matchSignal)
+        signalName = matchSignal{j};
+        fieldNameMatch = regexp(signalName, '^IRadar(.*?)_\d{2}', 'tokens', 'once');
+        fieldName = fieldNameMatch{1};
+        if strcmp(fieldName, 'LengthObject') || strcmp(fieldName, 'WidthObject')
+            valueToAdd = log.(signalName)(i, :) / dimensionscale;
+        else
+            valueToAdd = log.(signalName)(i, :);
+        end
+        existingData = logConverted.radObjectsACC.(fieldName);
+        logConverted.radObjectsACC.(fieldName) = [existingData; valueToAdd];
+    end
+end
+```
+
+However, the tests following led me to conclude that no signal explicitly indicates which object is the acc object.
+
+##### Version 3
+
+I recognized the necessity to design a script capable of automatically identifying the acc object in real-time. 
+
+The logic of this script involves: within a capsule duration of approximately 90 seconds containing around 9,000 time points, calculating the distance between all raw radar objects and fus objects based on their `LongitudinalDistanceObject` and `LateralDistanceObject` to the ego vehicle, then identifying the raw radar object with the minimal distance as the acc object.
+
+```matlab
+minDistance = inf;
+minIndex = 0;
+for i = 1:numObjects
+    dist = sqrt((logConverted.radObjects(i).LongitudinalDistanceObject(t) - logConverted.fusObject.LongitudinalDistanceObject(t))^2 + ...
+                (logConverted.radObjects(i).LateralDistanceObject(t) - logConverted.fusObject.LateralDistanceObject(t))^2);
+
+    if dist < minDistance
+        minDistance = dist;
+        minIndex = i;
+    end
+end
+if minIndex > 0
+    if isempty(logConverted.radObjectsACC)
+        logConverted.radObjectsACC = logConverted.radObjects(minIndex);
+    else
+        fieldNames = fieldnames(logConverted.radObjects(minIndex));
+        for f = 1:numel(fieldNames)
+            fieldName = fieldNames{f};
+            logConverted.radObjectsACC.(fieldName)(t) = logConverted.radObjects(minIndex).(fieldName)(t);
+        end
+    end
+end
+```
+
+Take this liquid transporter as an example of how discs are obtained. In Birdview, the semi-transparent yellow rectangle with ID 54276 represents this liquid transporter.
+
+![Untitled (1)](C:\Users\p126620\OneDrive - Alliance\Bureau\DEV LOG\assets\Untitled (1).png)
+
+Before performing the sorting, it is essential to ascertain the presence of a `fusObject` at the current time point, specifically whether both the `LongitudinalDistanceObject` and `LateralDistanceObject` fields in the `fusObject` are zero. If so, the acc object should also be absent, assigning a zero `IDobject`. 
+
+```matlab
+for t = 1:numTimeSteps
+    if logConverted.fusObject.LongitudinalDistanceObject(t) == 0 && logConverted.fusObject.LateralDistanceObject(t) == 0
+        if isempty(logConverted.radObjectsACC)
+            fieldNames = fieldnames(logConverted.radObjects(1));
+            for f = 1:numel(fieldNames)
+                logConverted.radObjectsACC.(fieldNames{f})(t) = 0;
+            end
+        else
+            fieldNames = fieldnames(logConverted.radObjectsACC);
+```
+
+This code will then mark the acc object as non-existent for these instances.
+
+```matlab
+if isfield(logConverted,'radObjectsACC')
+    logConverted.radObjectsACC.CIPVobject = logConverted.radObjectsACC.IDobject > 0;
+end
+```
+
+Without this preliminary check, the PostTagging Birdview code would render the object closest to the ego vehicle, typically a smaller object considered noise. 
+
+Some capsules lack a fusion object, and attempting to execute this script without accommodating for this absence results in errors. Therefore, I incorporated a `try` structure to ensure the continuation of the script. But it's still necessary to deselect the ACC object and fusion object in the Birdview Option for these capsules to display correctly.
+
+The full script of building radar ACC signals structure version 3:
+
+```matlab
+try
+    numObjects = numel(logConverted.radObjects);
+    numTimeSteps = numel(logConverted.radObjects(1).LongitudinalDistanceObject);
+    fieldNames = fieldnames(logConverted.radObjects(1));
+    logConverted.radObjectsACC = struct();
+    for f = 1:numel(fieldNames)
+        logConverted.radObjectsACC.(fieldNames{f}) = zeros(numTimeSteps, 1);  
+    end
+    for t = 1:numTimeSteps
+        if logConverted.fusObject.LongitudinalDistanceObject(t) == 0 && logConverted.fusObject.LateralDistanceObject(t) == 0
+            if isempty(logConverted.radObjectsACC)
+                fieldNames = fieldnames(logConverted.radObjects(1));
+                for f = 1:numel(fieldNames)
+                    logConverted.radObjectsACC.(fieldNames{f})(t) = 0;
+                end
+            else
+                fieldNames = fieldnames(logConverted.radObjectsACC);
+                for f = 1:numel(fieldNames)
+                    logConverted.radObjectsACC.(fieldNames{f})(t) = 0;
+                end
+            end
+        else
+            minDistance = inf;
+            minIndex = 0;
+            for i = 1:numObjects
+                dist = sqrt((logConverted.radObjects(i).LongitudinalDistanceObject(t) - logConverted.fusObject.LongitudinalDistanceObject(t))^2 + ...
+                            (logConverted.radObjects(i).LateralDistanceObject(t) - logConverted.fusObject.LateralDistanceObject(t))^2);
+
+                if dist < minDistance
+                    minDistance = dist;
+                    minIndex = i;
+                end
+            end
+
+            if minIndex > 0
+                if isempty(logConverted.radObjectsACC)
+                    logConverted.radObjectsACC = logConverted.radObjects(minIndex);
+                else
+                    fieldNames = fieldnames(logConverted.radObjects(minIndex));
+                    for f = 1:numel(fieldNames)
+                        fieldName = fieldNames{f};
+                        logConverted.radObjectsACC.(fieldName)(t) = logConverted.radObjects(minIndex).(fieldName)(t);
+                    end
+                end
+            end
+        end
+    end
+
+    for i = 1:numObjects
+        if isfield(logConverted.radObjectsACC, 'LongiDistanceObject')
+            logConverted.radObjectsACC.LongitudinalDistanceObject = logConverted.radObjectsACC.LongiDistanceObject;
+        end
+    end
+    for i = 1:numObjects
+        if isfield(logConverted.radObjectsACC, 'AbsLongiVelocityObject')
+            logConverted.radObjectsACC.AbsoluteLongiVelocityObject = logConverted.radObjectsACC.AbsLongiVelocityObject;
+        end
+    end
+    for i = 1:numObjects
+        if isfield(logConverted.radObjectsACC, 'AbsLongiAccelObject')
+            logConverted.radObjectsACC.AbsoluteLongiAccelerationObject = logConverted.radObjectsACC.AbsLongiAccelObject;
+        end
+    end
+
+
+    if isfield(logConverted,'radObjectsACC')
+        logConverted.radObjectsACC.CIPVobject = logConverted.radObjectsACC.IDobject > 0;
+    end
+end
+
+try
+    % radar object Most Probable
+    if ~isempty(fieldnames(logConverted.radObjects)) && isfield(logConverted,'fusObject') %|| isempty(fieldnames(logConverted.radObjectsACC))
+        [logConverted.radObjectMP] = findMPObject(logConverted.fusObject,logConverted.radObjects);
+    elseif isfield(logConverted,'radObjectsACC','var')
+        logConverted.radObjectMP = logConverted.radObjectsACC(1);
+        fprintf('\n Warning :  ACC radar object is considered as raw most probable object.\n');
+    else
+        warning('No radar Object found in current log.');
+    end
+end
+```
+
+#### Calibration of radar signals
+
+The radar signals of the SWEET 420 need to be calibrated in a series of processes in order to be mapped correctly. Firstly, in the `preprocess.m`, different parameters are used for calibration according to SWEET 420 and SWEET 200.
+
+```matlab
+% SWEET 420
+log = compuCoefs(log,'IRadarLongiDistance',0.078125,1);
+log = compuCoefs(log,'IRadarLateralDistance',0.078125,1); %A
+log = compuCoefs(log,'IRadarAbsLongiVelocity',0.00390625,1);
+log = compuCoefs(log,'IRadarAbsLatVelocity',0.00390625,1);
+log = compuCoefs(log,'RadarRelativeLatVelocityObject',0.00390625,1); %B
+log = compuCoefs(log,'IRadarAbsLongiAccel',0.00048828125,1);
+log = compuCoefs(log,'IRadarAbsLatAccel',0.00048828125,1);
+log = compuCoefs(log,'RadarRelativeLatAccelerationObject',0.00048828125,1); %B
+log = compuCoefs(log,'IRadarLengthObject',0.078125,1); %A
+log = compuCoefs(log,'IRadarWidthObject',0.078125,1); %A
+log = compuCoefs(log,'IRadarHeadingAngleObject',-0.99988,1); %Almost no effect
+% SWEET 200
+log = compuCoefs(log,'RadarLongitudinalDistanceObject',0.078125,1);
+log = compuCoefs(log,'RadarLateralDistanceObject',0.078125,1);
+log = compuCoefs(log,'RadarAbsoluteLongiVelocityObject',0.00390625,1);
+log = compuCoefs(log,'RadarAbsoluteLatVelocityObject',0.00390625,1);
+log = compuCoefs(log,'RadarRelativeLatVelocityObject',0.00390625,1);
+log = compuCoefs(log,'RadarAbsoluteLongiAccelerationObject',0.00048828125,1);
+log = compuCoefs(log,'RadarAbsoluteLatAccelerationObject',0.00048828125,1);
+log = compuCoefs(log,'RadarRelativeLatAccelerationObject',0.00048828125,1);
+log = compuCoefs(log,'RadarLengthObject',0.0078125,1);
+log = compuCoefs(log,'RadarWidthObject',0.0078125,1);
+log = compuCoefs(log,'RadarHeadingAngleObject',0.00012207,1);
+
+function log = compuCoefs(log,sigLabel,compuNum,compuDen)
+    % Get all log fields
+    fields = fieldnames(log);
+    % Find all signals containing specified label
+    correspSig = fields(find(contains(fields,sigLabel)));
+    
+    for i = 1:size(correspSig,1)
+        log.(correspSig{i})     = log.(correspSig{i})/(compuNum/compuDen);
+    end
+end
+```
+
+And in `inputFormat_C1A_HS.m`, the length and width of the objects needs to be scaled.
+
+```matlab
+% Create Radar raw objects
+radarObjectSignals = sigNames(contains(sigNames, 'IRadar') & ~cellfun(@isempty, regexp(sigNames, '^IRadar.*\d{2}$'))); % the signal begin with 'IRadar' and ends with two digits
+radarObjectNames = unique(cellfun(@(x) regexprep(x, '^IRadar.*_(\d{2})$', 'IRadar_Object$1'), radarObjectSignals, 'UniformOutput', false));
+numObjects = 64; % SWEET420
+% radObjects(1:numObjects) = struct();
+logConverted.radObjects = struct();
+for i = 1:numel(radarObjectSignals)
+    signalName = radarObjectSignals{i};
+    objectNumberMatch = regexp(signalName, '_(\d{2})$', 'tokens', 'once');
+    objectNumber = str2double(objectNumberMatch{1});
+    fieldNameMatch = regexp(signalName, '^IRadar(.*?)_', 'tokens', 'once');
+    fieldName = fieldNameMatch{1};
+    if strcmp(fieldName, 'LengthObject') || strcmp(fieldName, 'WidthObject')
+        logConverted.radObjects(objectNumber + 1).(fieldName) = log.(signalName) / 12.8;
+    else
+        logConverted.radObjects(objectNumber + 1).(fieldName) = log.(signalName);
+    end
+end
+for i = 1:numObjects
+    if isfield(logConverted.radObjects(i), 'LongiDistanceObject')
+        logConverted.radObjects(i).LongitudinalDistanceObject = logConverted.radObjects(i).LongiDistanceObject;
+    end
+end
+for i = 1:numObjects
+    if isfield(logConverted.radObjects(i), 'AbsLongiVelocityObject')
+        logConverted.radObjects(i).AbsoluteLongiVelocityObject = logConverted.radObjects(i).AbsLongiVelocityObject;
+    end
+end
+for i = 1:numObjects
+    if isfield(logConverted.radObjects(i), 'AbsLongiAccelObject')
+        logConverted.radObjects(i).AbsoluteLongiAccelerationObject = logConverted.radObjects(i).AbsLongiAccelObject;
+    end
+end
+```
+
+Before calibration :
+
+![image-20240611153449103](C:\Users\p126620\OneDrive - Alliance\Bureau\DEV LOG\assets\image-20240611153449103.png)
+
+After calibration :
+
+![image-20240613101928279](C:\Users\p126620\OneDrive - Alliance\Bureau\DEV LOG\assets\image-20240613101928279.png)
+
+When we zoom in on the ACC object area we can always see that the geometric relationship between Cam object, Rad ACC object and Fusion object matches.
+
+<img src="C:\Users\p126620\OneDrive - Alliance\Bureau\DEV LOG\assets\image-20240613102101370.png" alt="image-20240613102101370" style="zoom:50%;" />
 
 ## Development of pre-processing tool
 
@@ -644,7 +1120,28 @@ end
 
 ### Compiling into an executable program
 
-The `MergeVideos` and `DeleteCONTEXTVideos` functions can be compiled into an executable program, allowing them to be used without the need to launch MATLAB and connect a license. This also makes it easier to distribute to engineers. However, development of the executable program was not pursued further because the Toolbox used for MF4 decoding cannot be compiled.
+The `MergeVideos` and `DeleteCONTEXTVideos` functions can be compiled into an executable program, allowing them to be used without the need to launch MATLAB or connect a license. This also makes it easier to distribute to engineers. However, development of the executable program was not pursued further because the Toolbox used for MF4 decoding cannot be compiled.
+
+<img src="C:\Users\p126620\OneDrive - Alliance\Bureau\DEV LOG\assets\image-20240611143746139.png" alt="image-20240611143746139" style="zoom:50%;" />
+
+ ### Integrating into a post tagging tool
+
+In order that the PostTagging tool can recognise the newly added video ending with `_CONTEXT.avi`, we need to make the corresponding modifications in the variable `videoSuffix` which will be used later to search for relevent videos in the test path.
+
+```matlab
+%% parameters
+%              suffix       	deviceName
+videoSuffix = {'_FC.avi'    	'CAMavC'
+               '_FR.avi'    	'CAMavD'
+               '_FL.avi'    	'CAMavG'
+               '_RC.avi'    	'CAMarC'
+               '_HMI.avi'   	'CAMhmi'
+               '.avi'       	'CAMavC' % JFC 3594 logs
+               '_CONTEXT.avi'   'CAMcontext' % PIP
+               };
+```
+
+
 
 ### Integrating into a single `preprocess` Script
 
@@ -654,207 +1151,27 @@ The integration includes:
 - Addressing issues with the progress bar and processing order.
 - Solve the problem of repeated calls to external functions and data, the script can now run independently without relying on other files.
 
-**Source code of `preprocess.m`:**
+<img src="C:\Users\p126620\OneDrive - Alliance\Bureau\DEV LOG\assets\image-20240611145643765.png" alt="image-20240611145643765" style="zoom:50%;" />
 
-> [!NOTE]
->
-> The code is too long so we put it at the end of the document.
-
-### User experience
-Despite not being able to compile to an executable program, I made a simple command line UI that is easier to use and reduces the learning cost of the tool for engineers.
+### Source code of `preprocess.m`
 
 ```matlab
-    while true
-        clc;
-        disp('====================================');
-        disp(' Preprocess Tool for Perception ');
-        disp('====================================');
-        disp('[1] Preprocess MF4 and Videos');
-        disp('[2] Only Generate Videos');
-        disp('[3] Delete Videos');
-        disp('[4] Exit');
-        disp('====================================');
-        choice = input('Enter your choice : ');
-
-        switch choice
-            case 1
-                clc;
-                disp('====================================');
-                disp(' Preprocess MF4 and Videos ');
-                disp('====================================');
-                run('preprocess.m')
-                pause(0.5);
-                    confirm2 = input('Continue ? (y/n): ', 's');
-                    if lower(confirm2) == 'y'
-                    else
-                    end
-            case 2
-                directoryPath = uigetdir;
-                fprintf('\n--------VIDEOS WILL BE MERGED IN ALL CAPSULES SELECTED------------\n');
-                MergeVideos(directoryPath);
-                pause(5);
-            case 3
-                directoryPath = uigetdir;
-                fprintf('\n--------ALL THE MERGED VIDEOS SELECTED WILL BE REMOVED------------\n');
-                DeleteCONTEXTVideos(directoryPath);
-                pause(5);
-            case 4
-                clear all;
-                break;
-            otherwise
-        end
-    end
-```
-
-When we run the tool:
-
-```
-====================================
- Preprocess Tool for Perception 
-====================================
-[1] Preprocess MF4 and Videos
-[2] Only Generate Videos
-[3] Delete Videos
-[4] Exit
-====================================
-Enter your choice : 
-```
-
-We select the first choice and we select a path which has four capsules for test:
-
-```
-====================================
- Preprocess MF4 and Videos 
-====================================
- Capsules found : 
-    {'Capsule_Sweet200_1'}
-    {'Capsule_Sweet400'  }
-    {'Capsule_Sweet420_1'}
-    {'Capsule_Sweet420_2'}
-
-1/4 : Creating 20210422_103639.mat log.
-	1/5 : Converting _CAN-ITS1_ : DEV_HHN_626_AD1Evo_CAN-ITS1_20210422_103641_001_ESW-FCam7.2-FRad7.1.2.MF4	 -> Done !
-	2/5 : Converting _CAN-ITS2_ : DEV_HHN_626_AD1Evo_CAN-ITS2_20210422_103641_001_ESW-FCam7.2-FRad7.1.2.MF4	 -> Done !
-	3/5 : Converting _CAN-ITS4_ : DEV_HHN_626_AD1Evo_CAN-ITS4_20210422_103641_001_ESW-FCam7.2-FRad7.1.2.MF4	 -> Done !
-	4/5 : Converting _FCam_ : DEV_HHN_626_AD1Evo_FCam_20210422_103641_001_ESW-FCam7.2-FRad7.1.2.MF4	 -> Done !
-	5/5 : Converting _FRad_ : DEV_HHN_626_AD1Evo_FRad_20210422_103641_001_ESW-FCam7.2-FRad7.1.2.MF4	 -> Done !
-		  Converting VIDEO : DEV_HHN_626_AD1Evo_VIDEOS_20210422_103641_001.MF4	 -> Done !
-	      Saving 20210422_103641.mat...	 -> Done !
-          Missing files in Capsule_Sweet200_1: _FC.avi _RC.avi
-
-2/4 : Creating 20240409_111828.mat log.
-	1/5 : Converting _CAN-ITS1_ : DEV_HJBph2_4066_AD1Evo_CAN-ITS1_20240409_111830_008_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
-	2/5 : Converting _CAN-ITS2_ : DEV_HJBph2_4066_AD1Evo_CAN-ITS2_20240409_111830_008_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
-	3/5 : Converting _CAN-ITS4_ : DEV_HJBph2_4066_AD1Evo_CAN-ITS4_20240409_111830_008_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
-	4/5 : Converting _FCam_ : DEV_HJBph2_4066_AD1Evo_FCam_20240409_111830_008_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
-	5/5 : Converting _FRad_ : DEV_HJBph2_4066_AD1Evo_FRad_20240409_111830_008_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
-		  Converting VIDEO : DEV_HJBph2_4066_AD1Evo_VIDEOS_20240409_111831_008.MF4	 -> Done !
-	      Saving 20240409_111830.mat...	 -> Done !
-          VIDEO MERGING COMPLETE: Capsule_Sweet400
-
-3/4 : Creating 20240430_092642.mat log.
-	1/5 : Converting _CAN-ITS1_ : DEV_HJBph2_4066_AD1Evo_CAN-ITS1_20240430_092644_007_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
-	2/5 : Converting _CAN-ITS2_ : DEV_HJBph2_4066_AD1Evo_CAN-ITS2_20240430_092644_007_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
-	3/5 : Converting _CAN-ITS4_ : DEV_HJBph2_4066_AD1Evo_CAN-ITS4_20240430_092644_007_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
-	4/5 : Converting _FCam_ : DEV_HJBph2_4066_AD1Evo_FCam_20240430_092644_007_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
-          !! No recorder _FRad_ found at 20240430_092642 !! 
-		  Converting VIDEO : DEV_HJBph2_4066_AD1Evo_VIDEOS_20240430_092645_007.MF4	 -> Done !
-	      Saving 20240430_092644.mat...	 -> Done !
-          Missing files in Capsule_Sweet420_1: _RC.avi
-
-4/4 : Creating 20240430_140635.mat log.
-	1/5 : Converting _CAN-ITS1_ : DEV_HJBph2_4066_AD1Evo_CAN-ITS1_20240430_140637_007_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
-	2/5 : Converting _CAN-ITS2_ : DEV_HJBph2_4066_AD1Evo_CAN-ITS2_20240430_140637_007_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
-	3/5 : Converting _CAN-ITS4_ : DEV_HJBph2_4066_AD1Evo_CAN-ITS4_20240430_140637_007_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
-	4/5 : Converting _FCam_ : DEV_HJBph2_4066_AD1Evo_FCam_20240430_140637_007_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
-	5/5 : Converting _FRad_ : DEV_HJBph2_4066_AD1Evo_FRad_20240430_140637_007_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
-		  Converting VIDEO : DEV_HJBph2_4066_AD1Evo_VIDEOS_20240430_140638_007.MF4	 -> Done !
-	      Saving 20240430_140637.mat...	 -> Done !
-          VIDEO MERGING COMPLETE: Capsule_Sweet420_2
-
-Continue ? (y/n): 
-```
-
-Thus we can see all the detailed logs before continue using the post tagging tool.
-
-##  Plotting multiple signals
-
-In the PostTagging tool, engineers wish to simultaneously plot multiple signals within the drawing area and view legends. This task presents significant challenges, and I aim to implement this feature in a straightforward manner, starting by modifying the `refreshGraph.m` script. This script is continually invoked when the user interacts with the PostTagging GUI, used to update data in `handles` and redraw the plot. My approach involves inserting a `hold on` command at the appropriate position within the script and setting up a `legend`.
-
-```matlab
-function handles = refreshGraph(handles, onlyMarker)
-    if nargin < 2 
-        onlyMarker = 0;
-    end
-    global currSignal
-    global currTime
-    plotValue = handles.loadedLog.(currSignal);
-    
-    if size(handles.loadedLog.t, 1) == size(plotValue, 1)
-        currentLogTime = round(currTime-handles.vCont.t0+handles.loadedLog.t(1), 3);
-        [tUnique, iTimeUnique, ~] = unique(handles.loadedLog.t);
-        currIndexe = ceil(interp1(tUnique, iTimeUnique, currentLogTime));
-        
-        axes(handles.Graph); 
-        if ~isnan(currIndexe)
-            if onlyMarker == 0
-                randomColor = rand(1,3); 
-                hold on; 
-                    hLine = plot(handles.loadedLog.t, plotValue, 'Color', randomColor, 'DisplayName', sprintf('%s Signal', currSignal));
-                hold off;
-            end
-            set(handles.markerPlot, 'XData', handles.loadedLog.t(currIndexe), 'YData', plotValue(currIndexe), 'DisplayName', 'Current Marker');
-        end
-        
-        if isequal(currSignal, 'TAG_ACC')
-            if ~any(contains(handles.Graph.YTickLabel, 'RAS'))
-                set(handles.Graph, 'YTick', [0 1 2 3 4 5 6 10], 'YTickLabel', {'RAS', 'LS', 'LD', 'NLD', 'TOL', 'GHOST', 'ACC', 'Other'});
-                
-                iTagACC_K1_val = find(round(rem(plotValue, 1), 1) == 0.1 & plotValue ~= 0);
-                iTagACC_K2_val = find(round(rem(plotValue, 1), 1) == 0.2 & plotValue ~= 0);
-                iTagACC_K3_val = find(round(rem(plotValue, 1), 1) == 0.3 & plotValue ~= 0);
-                
-                
-                hold on; 
-                plot(handles.loadedLog.t(iTagACC_K1_val), plotValue(iTagACC_K1_val), 'g*', 'DisplayName', 'TAG_ACC K1');
-                plot(handles.loadedLog.t(iTagACC_K2_val), plotValue(iTagACC_K2_val), 'm*', 'DisplayName', 'TAG_ACC K2');
-                plot(handles.loadedLog.t(iTagACC_K3_val), plotValue(iTagACC_K3_val), 'y*', 'DisplayName', 'TAG_ACC K3');
-                hold off; 
-            end
-        else
-            if any(contains(handles.Graph.YTickLabel, 'RAS'))
-                handles.Graph.YTickLabelMode = 'Auto';
-                handles.Graph.YTickMode = 'Auto';
-            end
-        end
-        legend(handles.Graph, 'AutoUpdate', 'on', 'TextColor', 'white'); 
-    else
-        error('Wrong signal selected!');
-    end
-end
-```
-
-**Source code of `preprocess.m`:**
-
-```matlab
-% clear all
-% fprintf('\n-------------Preprocess MF4 and Videos-----------------\n');
-% directoryPath = 'C:\Users\p126620\OneDrive - Alliance\Bureau\MATLAB\TEST MERGE VIDEOS'
-    directoryPath = uigetdir; % select the path with subfolders which contain MF4 and AVI files
-%   toolbox functions required
- 	preprocess(directoryPath);
-    subFolders = dir(directoryPath);
-    isSub = [subFolders(:).isdir];
-    subFolderNames = {subFolders(isSub).name}';
-    subFolderNames(ismember(subFolderNames,{'.','..'})) = [];
+subFolders = uigetdir2('C:\Users\p126620\OneDrive - Alliance\Bureau\MATLAB\CAPSULES_FOR_TEST', 'Select Capsule folders (containing MF4 and AVI files)');
+subFolderNames = {};
+if ~isempty(subFolders)
+    subFolderNames = cellfun(@(x) fileparts(x), subFolders, 'UniformOutput', false);
+    subFolderNames = cellfun(@(x) x(find(x == filesep, 1, 'last') + 1:end), subFolders, 'UniformOutput', false);
     disp(' Capsules found : ');
     disp(subFolderNames);
+else
+    disp('No capsule selected.');
+end
 
     h = waitbar(0, 'Initializing...', 'Name', 'Merging Videos Progress', ...
                 'Color', [0.97, 0.97, 0.97],'WindowStyle', 'normal');
 
     for idx = 1:length(subFolderNames)
-        subFolderPath = fullfile(directoryPath, subFolderNames{idx});
+        subFolderPath = fullfile(subFolders{idx});
         
         %% ConvertLogs
         maxTime             = 90;
@@ -876,244 +1193,132 @@ end
         count_its2 = 0;
         iDataFrame= zeros(size(recorders,1),1);
 
-                                    %% CANAPE LOGS
+        % CANAPE LOGS
 
-                                    listVarCAN = {
-                                                  % ADAS ecu
-                                    %               '*_ITS2'
-                                  'V_*'
-                                  'TP_*'
-                                  'F_x*'
-                                  'ISteeringWheelAngleCorrected*'
+        listVarCAN = {
+          % ADAS ecu
+          % '*_ITS2'
+          'V_*'
+          'TP_*'
+          'F_x*'
+          'ISteeringWheelAngleCorrected*'
 
-                                  % GT
-                                  'device_1_Analog_0' % GT button
-
-
-                                  % Target flag
-                                  '*RadarIDobject' % Bosch Radar
-                                  '*RadarCIPVobject'
-                                  '*CamCIPVobject' % CIPV Camera
-
-                                  % Longitudinal Distance
-                                 '*LongitudinalDistanceObject'
-                                 'Range1PosForward' % RT Range
-
-                                 % Lateral Distance
-                                 '*LateralDistanceObject'
-                                 'Range1PosLateral' 
-
-                                 % Lateral Speed
-                                 '*RelativeLatVelocityObject'
-                                 'Range1VelLateral'
-
-                                 % Lateral Accel
-                                 '*RelativeLatAccelerationObject'
-
-                                 % Longitudinal Speed
-                                 '*AbsoluteLongiVelocityObject'
-                                 'Range1VelForward'
-                                 'HunterVelForward'
-
-                                 % Longitudinal Accel
-                                 '*AbsoluteLongiAccelerationObject'
-
-                                 % Time stamps
-                                 '*RadarTimestampObject' % Bosch Radar
-
-                                 % Other
-                                 'externalClockTimestamp'
-                                 'TAG_ACC'
-
-                                 % Other object infos
-                                 '*HeadingAngleObject'
-                                 '*CamAzimuthObject'
-                                 '*LengthObject'
-                                 '*WidthObject'
-                                 '*IDobject'
-                                 '*ClassificationObject'
-                                 '*AzimuthObject'
-                                 '*ExistenceProbObject'
-
-                                 % Lines
-                                 % Left Left
-                                 'Cam_InfrastructureLines_CamLeftLeftLine*'
-                                 % Left
-                                 'Cam_InfrastructureLines_CamLeftLine*'
-                                 % Right
-                                 'Cam_InfrastructureLines_CamRightLine*'
-                                 % Right Right
-                                 'Cam_InfrastructureLines_CamRightRightLine*'
-
-                                 % Other Range
-                                 'Range1TimeToCollisionForward'
-                                 'Range1TimeToCollisionLateral'
-                                 'Range1VelLateral'
-
-                                 };
+          % GT
+          'device_1_Analog_0' % GT button
 
 
-                                    %% CONTROL DESK LOGS
-                                    listVarCD = {% HHN FUsion Object 1
-                                                'TP_HHN_1E'
-                                                'TP_HHN_2E'
+          % Target flag
+          '*RadarIDobject' % Bosch Radar
+          '*RadarCIPVobject'
+          '*CamCIPVobject' % CIPV Camera
 
-                                                % Longitudinal Distance
-                                                'TP_V_m_Distance' % Fusion RSA
-                                                'TP_C1A_Vector_RadarXxObject' % Radar Conti
-                                                'TP_C1A_Vector_RadarXxObject01' % Radar Conti
-                                                'TP_C1A_Vector_RadarXxObject00XxDistanceObject00' % Radar Conti
-                                                'TP_C1A_Vector_CameraXxCVM_Object' % Camera Valeo
-                                                'TP_Range1PosForward' % RT Range
+          % Longitudinal Distance
+         '*LongitudinalDistanceObject'
+         'Range1PosForward' % RT Range
 
-                                                % Taget Flag
-                                                'F_x_Target' % Fusion RSA
-                                                'TP_C1A_Vector_RadarXxObject00XxIDobject00' % Radar Conti
-                                                'TP_C1A_Vector_CameraXxCVM_Object00XxCamCIPVobject00' % Camera Valeo
+         % Lateral Distance
+         '*LateralDistanceObject'
+         'Range1PosLateral' 
 
-                                                % Lateral Distance
-                                                'V_m_TargetYdistCalc' % Fusion RSA
-                                                'TP_C1A_Vector_RadarXxObject00XxLateralDistanceObject00' % Radar Conti
-                                                'TP_C1A_Vector_CameraXxCVM_Object00XxCamLateralDistanceObject00' % Camera Valeo
-                                                'TP_Range1PosLateral' % RT Range
+         % Lateral Speed
+         '*RelativeLatVelocityObject'
+         'Range1VelLateral'
 
-                                                % Longitudinal Speed
-                                                'V_mps_TargetSpeed' % Fusion RSA
-                                                'TP_C1A_Vector_RadarXxObject00XxRelativeSpeedObject00' % Radar Conti
-                                                'TP_C1A_Vector_CameraXxCVM_Object00XxCamRelativeVelocityObject00' % Camera Valeo
-                                                'TP_Range1VelForward' % RT Range
+         % Lateral Accel
+         '*RelativeLatAccelerationObject'
 
-                                                % Longitudinal Accel
-                                                'TP_V_mps2_TargetAcceleration_Est' % Fusion RSA
-                                                'TP_C1A_Vector_RadarXxObject00XxRelativeAccelerationObject00' % Radar Conti
-                                                'TP_C1A_Vector_CameraXxCVM_Object00XxCamAbsoluteAccelerationObject00' % Camera Valeo
+         % Longitudinal Speed
+         '*AbsoluteLongiVelocityObject'
+         'Range1VelForward'
+         'HunterVelForward'
 
-                                                % Other
-                                                'externalclocktimestamp' % external clock time stamp for synchro
-                                                'TP_V_mes_mps_VehicleSpeed' % Ego Speed
-                                                'TP_V_mps2_VehAcceleration_Est' % Ego Acceleration
-                                                'V_degps_YawRate' % Ego Yaw Rate
-                                                'V_deg_SteeringWheelAngle' % Steering Wheel Angle
-                                                'TP_F_x_'
-                                                '=t'
+         % Longitudinal Accel
+         '*AbsoluteLongiAccelerationObject'
 
-                                                % LDC Fusion selection
-                                                'TP_Flag_Fusion_P_tng_x_AD1Enh_FusionFeatureMngt' % C1AHS Fusion used Flag
-                                                }';
+         % Time stamps
+         '*RadarTimestampObject' % Bosch Radar
 
-                                       % Old
-                                    %    listVarCAN = {
-                                    %               % ADAS ecu
-                                    %               'Target'
-                                    %               'V_mes_mps_VehicleSpeed_ITS2'
-                                    %               'V_mps2_VehicleAcceleration_Est_ITS2'
-                                    %               'IYawRateCorrected'
-                                    %               'ISteeringWheelAngleCorrected'
-                                    %               
-                                    %               % ADAS dev frames
-                                    %               'F_x_TargetDetected_ITS2'
-                                    %               'V_m_Distance_Meas_ITS2'
-                                    %               'V_mps_TargetSpeed_Meas_ITS2'
-                                    %               'V_mps2_TargetAcceleration_ITS2'
-                                    %               'V_m_TargetYdistMeas_ITS2'
-                                    %               
-                                    %               
-                                    %               
-                                    %               'TP_V_mes_mps_VehicleSpeed' % Ego Speed
-                                    %               'TP_V_mps2_VehAcceleration_Est' % Ego Acceleration
-                                    %               'V_degps_YawRate' % Ego Yaw Rate
-                                    %               'V_deg_SteeringWheelAngle' % Steering Wheel Angle
-                                    %               
-                                    %             
-                                    %               % GT
-                                    %               'device_1_Analog_0' % GT button
-                                    %               
-                                    % 
-                                    %               % Target flag
-                                    %               'Radar_ObjectAcc00_RadarIDobject' % Bosch Radar
-                                    %               'Cam_Object00_CamCIPVobject' % ZF Camera
-                                    %               'Radar_ObjectAcc01_RadarIDobject' % Bosch Radar
-                                    %               'Cam_Object01_CamCIPVobject' % ZF Camera
-                                    %                 
-                                    %               % Longitudinal Distance
-                                    %              'Radar_ObjectAcc00_RadarLongitudinalDistanceObject' % Bosch Radar
-                                    %              'Cam_Object00_CamLongitudinalDistanceObject' % ZF Camera
-                                    %              'Radar_ObjectAcc01_RadarLongitudinalDistanceObject' % Bosch Radar
-                                    %              'Cam_Object01_CamLongitudinalDistanceObject' % ZF Camera
-                                    %              'Range1PosForward' % RT Range
-                                    %              
-                                    %              % Lateral Distance
-                                    %              'Radar_ObjectAcc00_RadarLateralDistanceObject' % Bosch Radar
-                                    %              'Cam_Object00_CamLateralDistanceObject' % ZF Camera
-                                    %              'Radar_ObjectAcc01_RadarLateralDistanceObject' % Bosch Radar
-                                    %              'Cam_Object01_CamLateralDistanceObject' % ZF Camera
-                                    %              'Range1PosLateral' 
-                                    %              
-                                    %              % Longitudinal Speed
-                                    %              'Radar_ObjectAcc00_RadarAbsoluteLongiVelocityObject' % Bosch Radar
-                                    %              'Cam_Object00_CamAbsoluteLongiVelocityObject' % ZF Camera
-                                    %              'Radar_ObjectAcc01_RadarAbsoluteLongiVelocityObject' % Bosch Radar
-                                    %              'Cam_Object01_CamAbsoluteLongiVelocityObject' % ZF Camera
-                                    %              'Range1VelForward'
-                                    %              'HunterVelForward'
-                                    %              
-                                    %              % Longitudinal Accel
-                                    %              'Radar_ObjectAcc00_RadarAbsoluteLongiAccelerationObject' % Bosch Radar
-                                    %              'Cam_Object00_CamAbsoluteLongiAccelerationObject' % ZF Camera
-                                    %              'Radar_ObjectAcc01_RadarAbsoluteLongiAccelerationObject' % Bosch Radar
-                                    %              'Cam_Object01_CamAbsoluteLongiAccelerationObject' % ZF Camera
-                                    %              
-                                    %              % Time stamps
-                                    %              'Radar_ObjectAcc00_RadarTimestampObject' % Bosch Radar
-                                    %              'Cam_Object00_CamTimestampObject' % ZF Camera
-                                    %              'Radar_ObjectAcc01_RadarTimestampObject' % Bosch Radar
-                                    %              'Cam_Object01_CamTimestampObject' % ZF Camera
-                                    %              
-                                    %              % Other
-                                    %              'externalClockTimestamp'
-                                    %              'TAG_ACC'
-                                    %              
-                                    %              % Other object infos
-                                    %              'Cam_Object00_CamHeadingAngleObject'
-                                    %              'Cam_Object01_CamHeadingAngleObject'
-                                    %              'Cam_Object00_CamAzimuthObject'
-                                    %              'Cam_Object01_CamAzimuthObject'
-                                    %              'Cam_Object00_CamLengthObject'
-                                    %              'Cam_Object01_CamLengthObject'
-                                    %              'Cam_Object00_CamWidthObject'
-                                    %              'Cam_Object01_CamWidthObject'
-                                    %              
-                                    %              % Lines
-                                    %              % Left Left
-                                    %              'Cam_InfrastructureLines_CamLeftLeftLineOffset'
-                                    %              'Cam_InfrastructureLines_CamLeftLeftLineYawAngle'
-                                    %              'Cam_InfrastructureLines_CamLeftLeftLineCurvature'
-                                    %              'Cam_InfrastructureLines_CamLeftLeftLineCurvatureRate'
-                                    %              % Left
-                                    %              'Cam_InfrastructureLines_CamLeftLineOffset'
-                                    %              'Cam_InfrastructureLines_CamLeftLineYawAngle'
-                                    %              'Cam_InfrastructureLines_CamLeftLineCurvature'
-                                    %              'Cam_InfrastructureLines_CamLeftLineCurvatureRate'
-                                    %              % Right
-                                    %              'Cam_InfrastructureLines_CamRightLineOffset'
-                                    %              'Cam_InfrastructureLines_CamRightLineYawAngle'
-                                    %              'Cam_InfrastructureLines_CamRightLineCurvature'
-                                    %              'Cam_InfrastructureLines_CamRightLineCurvatureRate'
-                                    %              % Right Right
-                                    %              'Cam_InfrastructureLines_CamRightLineOffset'
-                                    %              'Cam_InfrastructureLines_CamRightLineYawAngle'
-                                    %              'Cam_InfrastructureLines_CamRightLineCurvature'
-                                    %              'Cam_InfrastructureLines_CamRightLineCurvatureRate'
-                                    %              
-                                    %              % Other Range
-                                    %              'Range1TimeToCollisionForward'
-                                    %              'Range1TimeToCollisionLateral'
-                                    %              'Range1VelLateral'
-                                    %              
-                                    %              % Driver Brake
-                                    %              'IBrakePedalPressedByDriver'
-                                    %              'F_x_DriverBrake_ITS2'
-                                    %              };
+         % Other
+         'externalClockTimestamp'
+         'TAG_ACC'
+
+         % Other object infos
+         '*HeadingAngleObject'
+         '*CamAzimuthObject'
+         '*LengthObject'
+         '*WidthObject'
+         '*IDobject'
+         '*ClassificationObject'
+         '*AzimuthObject'
+         '*ExistenceProbObject'
+
+         % Lines
+         % Left Left
+         'Cam_InfrastructureLines_CamLeftLeftLine*'
+         % Left
+         'Cam_InfrastructureLines_CamLeftLine*'
+         % Right
+         'Cam_InfrastructureLines_CamRightLine*'
+         % Right Right
+         'Cam_InfrastructureLines_CamRightRightLine*'
+
+         % Other Range
+         'Range1TimeToCollisionForward'
+         'Range1TimeToCollisionLateral'
+         'Range1VelLateral'
+
+         };
+
+
+        % CONTROL DESK LOGS
+        listVarCD = {% HHN FUsion Object 1
+        'TP_HHN_1E'
+        'TP_HHN_2E'
+
+        % Longitudinal Distance
+        'TP_V_m_Distance' % Fusion RSA
+        'TP_C1A_Vector_RadarXxObject' % Radar Conti
+        'TP_C1A_Vector_RadarXxObject01' % Radar Conti
+        'TP_C1A_Vector_RadarXxObject00XxDistanceObject00' % Radar Conti
+        'TP_C1A_Vector_CameraXxCVM_Object' % Camera Valeo
+        'TP_Range1PosForward' % RT Range
+
+        % Taget Flag
+        'F_x_Target' % Fusion RSA
+        'TP_C1A_Vector_RadarXxObject00XxIDobject00' % Radar Conti
+        'TP_C1A_Vector_CameraXxCVM_Object00XxCamCIPVobject00' % Camera Valeo
+
+        % Lateral Distance
+        'V_m_TargetYdistCalc' % Fusion RSA
+        'TP_C1A_Vector_RadarXxObject00XxLateralDistanceObject00' % Radar Conti
+        'TP_C1A_Vector_CameraXxCVM_Object00XxCamLateralDistanceObject00' % Camera Valeo
+        'TP_Range1PosLateral' % RT Range
+
+        % Longitudinal Speed
+        'V_mps_TargetSpeed' % Fusion RSA
+        'TP_C1A_Vector_RadarXxObject00XxRelativeSpeedObject00' % Radar Conti
+        'TP_C1A_Vector_CameraXxCVM_Object00XxCamRelativeVelocityObject00' % Camera Valeo
+        'TP_Range1VelForward' % RT Range
+
+        % Longitudinal Accel
+        'TP_V_mps2_TargetAcceleration_Est' % Fusion RSA
+        'TP_C1A_Vector_RadarXxObject00XxRelativeAccelerationObject00' % Radar Conti
+        'TP_C1A_Vector_CameraXxCVM_Object00XxCamAbsoluteAccelerationObject00' % Camera Valeo
+
+        % Other
+        'externalclocktimestamp' % external clock time stamp for synchro
+        'TP_V_mes_mps_VehicleSpeed' % Ego Speed
+        'TP_V_mps2_VehAcceleration_Est' % Ego Acceleration
+        'V_degps_YawRate' % Ego Yaw Rate
+        'V_deg_SteeringWheelAngle' % Steering Wheel Angle
+        'TP_F_x_'
+        '=t'
+
+        % LDC Fusion selection
+        'TP_Flag_Fusion_P_tng_x_AD1Enh_FusionFeatureMngt' % C1AHS Fusion used Flag
+        }';
+
+
         listVarCAN = {};
         currCanapePath = subFolderPath;
             % canapeConvPath = fullfile(currCanapePath,'test');
@@ -1205,17 +1410,7 @@ end
                            elseif contains(recorders{rec,1},'FRad') % FRad recorder
                                fprintf('\t%d/%d : Converting FRad : %s',rec,size(recorders,1),recorderFile);
                                [log iDataFrame(rec)]   = readMDF_MsgBased_Ethernet(fullfile(currCanapePath,recorderFile), 1, 0.01, 1,2,iDataFrame(rec),listVarCAN);
-                               log = compuCoefs(log,'RadarLongitudinalDistanceObject',0.078125,1);
-                               log = compuCoefs(log,'RadarLateralDistanceObject',0.078125,1);
-                               log = compuCoefs(log,'RadarAbsoluteLongiVelocityObject',0.00390625,1);
-                               log = compuCoefs(log,'RadarAbsoluteLatVelocityObject',0.00390625,1);
-                               log = compuCoefs(log,'RadarRelativeLatVelocityObject',0.00390625,1);
-                               log = compuCoefs(log,'RadarAbsoluteLongiAccelerationObject',0.00048828125,1);
-                               log = compuCoefs(log,'RadarAbsoluteLatAccelerationObject',0.00048828125,1);
-                               log = compuCoefs(log,'RadarRelativeLatAccelerationObject',0.00048828125,1);
-                               log = compuCoefs(log,'RadarLengthObject',0.0078125,1);
-                               log = compuCoefs(log,'RadarWidthObject',0.0078125,1);
-                               log = compuCoefs(log,'RadarHeadingAngleObject',-0.99988,1);
+                               
                                fprintf('\t -> Done !\n');
                            elseif contains(recorders{rec,1},'CAN-ADAS') || (contains(recorders{rec,1},'_CAN-ITS2_') && count_its2 == 1) % CAN-ADAS -> TVC recorder.
                                fprintf('\t%d/%d : Converting ADAS : %s',rec,size(recorders,1),recorderFile);
@@ -1387,7 +1582,8 @@ end
                 concatenateLogs(currCanapePath,20);
             end
             end
-        %     msgbox('Conversion finished !','Done');
+
+        
 
         %% MergeVideos
         files = dir(fullfile(subFolderPath, '*.avi'));
@@ -1469,9 +1665,11 @@ end
     end
     
     close(h);
+    clear all;
     
-    %% local functions
-    function Fichiers = filesearch(chemin, extension, avecSousDossiers)
+    
+%% Local functions
+function Fichiers = filesearch(chemin, extension, avecSousDossiers)
 if nargin < 2
     error('Pas assez d''arguments');
 elseif nargin < 3
@@ -1556,22 +1754,34 @@ function log = readMDF_DM_MD(fileFullName,Interpolation, SampleTime, SetStartTim
     [finalDatas,  FieldMatrix] = Read_MDF_DM(fileFullName, Interpolation, SampleTime, SetStartTime0,listVars,listNames);
     if ~isempty(finalDatas)
         log = finishMDFConversion(finalDatas);
-        log = compuCoefs(log,'RadarLongitudinalDistanceObject',0.078125,1);
-        log = compuCoefs(log,'RadarLateralDistanceObject',0.078125,1);
-        log = compuCoefs(log,'RadarAbsoluteLongiVelocityObject',0.00390625,1);
-        log = compuCoefs(log,'RadarAbsoluteLatVelocityObject',0.00390625,1);
-        log = compuCoefs(log,'RadarRelativeLatVelocityObject',0.00390625,1);
-        log = compuCoefs(log,'RadarAbsoluteLongiAccelerationObject',0.00048828125,1);
-        log = compuCoefs(log,'RadarAbsoluteLatAccelerationObject',0.00048828125,1);
-        log = compuCoefs(log,'RadarRelativeLatAccelerationObject',0.00048828125,1);
-        log = compuCoefs(log,'RadarLengthObject',0.0078125,1);
-        log = compuCoefs(log,'RadarWidthObject',0.0078125,1);
-        log = compuCoefs(log,'RadarHeadingAngleObject',0.00012207,1);
+        % SWEET 420
+%         log = compuCoefs(log,'IRadarLongiDistance',0.078125,1);
+%         log = compuCoefs(log,'IRadarLateralDistance',0.078125,1); %A
+%         log = compuCoefs(log,'IRadarAbsLongiVelocity',0.00390625,1);
+%         log = compuCoefs(log,'IRadarAbsLatVelocity',0.00390625,1);
+%         log = compuCoefs(log,'RadarRelativeLatVelocityObject',0.00390625,1); %B
+%         log = compuCoefs(log,'IRadarAbsLongiAccel',0.00048828125,1);
+%         log = compuCoefs(log,'IRadarAbsLatAccel',0.00048828125,1);
+%         log = compuCoefs(log,'RadarRelativeLatAccelerationObject',0.00048828125,1); %B
+%         log = compuCoefs(log,'IRadarLengthObject',0.078125,1); %A
+%         log = compuCoefs(log,'IRadarWidthObject',0.078125,1); %A
+%         log = compuCoefs(log,'IRadarHeadingAngleObject',-0.99988,1); %Almost no effect
+        % SWEET 200
+%         log = compuCoefs(log,'RadarLongitudinalDistanceObject',0.078125,1);
+%         log = compuCoefs(log,'RadarLateralDistanceObject',0.078125,1);
+%         log = compuCoefs(log,'RadarAbsoluteLongiVelocityObject',0.00390625,1);
+%         log = compuCoefs(log,'RadarAbsoluteLatVelocityObject',0.00390625,1);
+%         log = compuCoefs(log,'RadarRelativeLatVelocityObject',0.00390625,1);
+%         log = compuCoefs(log,'RadarAbsoluteLongiAccelerationObject',0.00048828125,1);
+%         log = compuCoefs(log,'RadarAbsoluteLatAccelerationObject',0.00048828125,1);
+%         log = compuCoefs(log,'RadarRelativeLatAccelerationObject',0.00048828125,1);
+%         log = compuCoefs(log,'RadarLengthObject',0.0078125,1);
+%         log = compuCoefs(log,'RadarWidthObject',0.0078125,1);
+%         log = compuCoefs(log,'RadarHeadingAngleObject',0.00012207,1);
     else
         log = struct();
     end
 end
-
 
 function [finalDatas,  FieldMatrix] = Read_MDF_DM(curPath, Interpolation, SampleTime, SetStartTime0,listVars,listNames)
 if nargin < 6 % listNames not defined
@@ -1615,7 +1825,7 @@ dataTableErrors = zeros(sum(curSizes), 1);
 last_index = 1;
 waitbar(0.1,curBarH);
 
-%% Modified for signal name more than 63 char  
+% Modified for signal name more than 63 char  
 for i=1:length(curNames(:,1))
     timeVectors{i, 1} = ['t' num2str(i)];
     try timeVectors{i, 2} = read(mdfObj, i, mdfObj.ChannelNames{i}{curSizes(i)}, 'OutputFormat','Vector');
@@ -1707,7 +1917,7 @@ else
     finalDatas = [dataTable(idx, :) ; {'t', t}];
 end
 
-%% adding for posixtime contained as initialTimestamp of mdfobj
+% adding for posixtime contained as initialTimestamp of mdfobj
 % finalDatas = [finalDatas;{???????'t_posixtime',t+posixtime(mdfObj.InitialTimestamp)}???????];
 if Interpolation
     finalDatas = [finalDatas;{'t_posixTime',posixtime(mdfObj.InitialTimestamp)+t}];
@@ -1735,9 +1945,7 @@ end
 finalDatas(:,1) = matlab.lang.makeValidName(finalDatas(:,1));
 finalDatas(:,3) = num2cell(ones(length(finalDatas(:,1)) , 1));
 end
-% FUNCTIONS
 
-% Wildcar function -> filter signals according to listvar
 function outputBool = wildcard(sigList,listStatsWith,listEndsWith,listStartAndEndsWith,listMatch)
     startWithBool        = any(cellfun(@(x) any(startsWith(sigList,x)),listStatsWith));
     endWithBool          = any(cellfun(@(x) any(endsWith(sigList,x)),listEndsWith));
@@ -1805,5 +2013,459 @@ function s3 = appendStructs(s1,s2,prefix)
         s3.([prefix f2{i}]) = s2.(f2{i});
     end
 end
+
+function folders = uigetdir2(start_path, dialog_title)
+    import java.awt.*;
+    import javax.swing.*;
+
+    jchooser = javax.swing.JFileChooser(start_path);
+    jchooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+    jchooser.setMultiSelectionEnabled(true);
+    jchooser.setDialogTitle(dialog_title);
+    if jchooser.showOpenDialog([]) == JFileChooser.APPROVE_OPTION
+        jfiles = jchooser.getSelectedFiles();
+        folders = arrayfun(@(f) char(f.getPath()), jfiles, 'UniformOutput', false);
+    else
+        folders = {};
+    end
+end
 ```
+
+### User experience
+Despite not being able to compile to an executable program, I made a simple command line UI that is easier to use and reduces the learning cost of the tool for engineers.
+
+```matlab
+    while true
+        clc;
+        disp('====================================');
+        disp(' Preprocess Tool for Perception ');
+        disp('====================================');
+        disp('[1] Preprocess MF4 and Videos');
+        disp('[2] Only Generate Videos');
+        disp('[3] Delete Videos');
+        disp('[4] Exit');
+        disp('====================================');
+        choice = input('Enter your choice : ');
+
+        switch choice
+            case 1
+                clc;
+                disp('====================================');
+                disp(' Preprocess MF4 and Videos ');
+                disp('====================================');
+                run('preprocess.m')
+                pause(0.5);
+                    confirm2 = input('Continue ? (y/n): ', 's');
+                    if lower(confirm2) == 'y'
+                    else
+                    end
+            case 2
+                directoryPath = uigetdir;
+                fprintf('\n--------VIDEOS WILL BE MERGED IN ALL CAPSULES SELECTED------------\n');
+                MergeVideos(directoryPath);
+                pause(5);
+            case 3
+                directoryPath = uigetdir;
+                fprintf('\n--------ALL THE MERGED VIDEOS SELECTED WILL BE REMOVED------------\n');
+                DeleteCONTEXTVideos(directoryPath);
+                pause(5);
+            case 4
+                clear all;
+                break;
+            otherwise
+        end
+    end
+```
+
+When we run the tool:
+
+```
+====================================
+ Preprocess Tool for Perception 
+====================================
+[1] Preprocess MF4 and Videos
+[2] Only Generate Videos
+[3] Delete Videos
+[4] Exit
+====================================
+Enter your choice : 
+```
+
+We select the first choice and we select a path which has four capsules for test:
+
+```
+====================================
+ Preprocess MF4 and Videos 
+====================================
+ Capsules found : 
+    {'Capsule_Sweet200_1'}
+    {'Capsule_Sweet400'  }
+    {'Capsule_Sweet420_1'}
+    {'Capsule_Sweet420_2'}
+
+1/4 : Creating 20210422_103639.mat log.
+	1/5 : Converting _CAN-ITS1_ : DEV_HHN_626_AD1Evo_CAN-ITS1_20210422_103641_001_ESW-FCam7.2-FRad7.1.2.MF4	 -> Done !
+	2/5 : Converting _CAN-ITS2_ : DEV_HHN_626_AD1Evo_CAN-ITS2_20210422_103641_001_ESW-FCam7.2-FRad7.1.2.MF4	 -> Done !
+	3/5 : Converting _CAN-ITS4_ : DEV_HHN_626_AD1Evo_CAN-ITS4_20210422_103641_001_ESW-FCam7.2-FRad7.1.2.MF4	 -> Done !
+	4/5 : Converting _FCam_ : DEV_HHN_626_AD1Evo_FCam_20210422_103641_001_ESW-FCam7.2-FRad7.1.2.MF4	 -> Done !
+	5/5 : Converting _FRad_ : DEV_HHN_626_AD1Evo_FRad_20210422_103641_001_ESW-FCam7.2-FRad7.1.2.MF4	 -> Done !
+		  Converting VIDEO : DEV_HHN_626_AD1Evo_VIDEOS_20210422_103641_001.MF4	 -> Done !
+	      Saving 20210422_103641.mat...	 -> Done !
+          Missing files in Capsule_Sweet200_1: _FC.avi _RC.avi
+
+2/4 : Creating 20240409_111828.mat log.
+	1/5 : Converting _CAN-ITS1_ : DEV_HJBph2_4066_AD1Evo_CAN-ITS1_20240409_111830_008_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
+	2/5 : Converting _CAN-ITS2_ : DEV_HJBph2_4066_AD1Evo_CAN-ITS2_20240409_111830_008_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
+	3/5 : Converting _CAN-ITS4_ : DEV_HJBph2_4066_AD1Evo_CAN-ITS4_20240409_111830_008_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
+	4/5 : Converting _FCam_ : DEV_HJBph2_4066_AD1Evo_FCam_20240409_111830_008_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
+	5/5 : Converting _FRad_ : DEV_HJBph2_4066_AD1Evo_FRad_20240409_111830_008_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
+		  Converting VIDEO : DEV_HJBph2_4066_AD1Evo_VIDEOS_20240409_111831_008.MF4	 -> Done !
+	      Saving 20240409_111830.mat...	 -> Done !
+          VIDEO MERGING COMPLETE: Capsule_Sweet400
+
+3/4 : Creating 20240430_092642.mat log.
+	1/5 : Converting _CAN-ITS1_ : DEV_HJBph2_4066_AD1Evo_CAN-ITS1_20240430_092644_007_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
+	2/5 : Converting _CAN-ITS2_ : DEV_HJBph2_4066_AD1Evo_CAN-ITS2_20240430_092644_007_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
+	3/5 : Converting _CAN-ITS4_ : DEV_HJBph2_4066_AD1Evo_CAN-ITS4_20240430_092644_007_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
+	4/5 : Converting _FCam_ : DEV_HJBph2_4066_AD1Evo_FCam_20240430_092644_007_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
+          !! No recorder _FRad_ found at 20240430_092642 !! 
+		  Converting VIDEO : DEV_HJBph2_4066_AD1Evo_VIDEOS_20240430_092645_007.MF4	 -> Done !
+	      Saving 20240430_092644.mat...	 -> Done !
+          Missing files in Capsule_Sweet420_1: _RC.avi
+
+4/4 : Creating 20240430_140635.mat log.
+	1/5 : Converting _CAN-ITS1_ : DEV_HJBph2_4066_AD1Evo_CAN-ITS1_20240430_140637_007_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
+	2/5 : Converting _CAN-ITS2_ : DEV_HJBph2_4066_AD1Evo_CAN-ITS2_20240430_140637_007_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
+	3/5 : Converting _CAN-ITS4_ : DEV_HJBph2_4066_AD1Evo_CAN-ITS4_20240430_140637_007_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
+	4/5 : Converting _FCam_ : DEV_HJBph2_4066_AD1Evo_FCam_20240430_140637_007_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
+	5/5 : Converting _FRad_ : DEV_HJBph2_4066_AD1Evo_FRad_20240430_140637_007_ESW-FCam3.0-FRad3.3.MF4	 -> Done !
+		  Converting VIDEO : DEV_HJBph2_4066_AD1Evo_VIDEOS_20240430_140638_007.MF4	 -> Done !
+	      Saving 20240430_140637.mat...	 -> Done !
+          VIDEO MERGING COMPLETE: Capsule_Sweet420_2
+
+Continue ? (y/n): 
+```
+
+Thus we can see all the detailed logs before continue using the post tagging tool.
+
+### Update based on user feedback
+
+After the initial version was sent to a colleague, there were some errors, but I didn't encounter the same errors. So I suspect it may be due to that the logic of the code for capsule selection wasn't easy to use. Since MATLAB `uigetdir` function doesn't support multi-selected paths. The previous logic was to iterate through all the subfolders under the user-selected path, and consider the subfolders as capsules. But this was not intuitively logical and could easily lead to misunderstandings. In order to change the logic of the function to allow the user to directly multi-select folders and then it returns a variable to store multiple paths, I researched online and found an applicable solution. In the code, I added a new local function `uigetdir2`.
+
+```matlab
+subFolders = uigetdir2(pwd, 'Select Capsule folders (containing MF4 and AVI files)');
+subFolderNames = {};
+if ~isempty(subFolders)
+    subFolderNames = cellfun(@(x) fileparts(x), subFolders, 'UniformOutput', false);
+    subFolderNames = cellfun(@(x) x(find(x == filesep, 1, 'last') + 1:end), subFolders, 'UniformOutput', false);
+    disp(' Capsules found : ');
+    disp(subFolderNames);
+else
+    disp('No capsule selected.');
+end
+
+function folders = uigetdir2(start_path, dialog_title)
+    import java.awt.*;
+    import javax.swing.*;
+
+    jchooser = javax.swing.JFileChooser(start_path);
+    jchooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+    jchooser.setMultiSelectionEnabled(true);
+    jchooser.setDialogTitle(dialog_title);
+    if jchooser.showOpenDialog([]) == JFileChooser.APPROVE_OPTION
+        jfiles = jchooser.getSelectedFiles();
+        folders = arrayfun(@(f) char(f.getPath()), jfiles, 'UniformOutput', false);
+    else
+        folders = {};
+    end
+end
+```
+
+##  Plotting multiple signals
+
+### Exploration Phase
+
+In the PostTagging tool, engineers wish to simultaneously plot multiple signals within the drawing area and view legends. This task presents significant challenges, and I aim to implement this feature in a straightforward manner, starting by modifying the `refreshGraph.m` script. This script is continually invoked when the user interacts with the PostTagging GUI, used to update data in `handles` and redraw the plot. My approach involves inserting a `hold on` command at the appropriate position within the script and setting up a `legend`.
+
+```matlab
+function handles = refreshGraph(handles, onlyMarker)
+    if nargin < 2 
+        onlyMarker = 0;
+    end
+    global currSignal
+    global currTime
+    plotValue = handles.loadedLog.(currSignal);
+    
+    if size(handles.loadedLog.t, 1) == size(plotValue, 1)
+        currentLogTime = round(currTime-handles.vCont.t0+handles.loadedLog.t(1), 3);
+        [tUnique, iTimeUnique, ~] = unique(handles.loadedLog.t);
+        currIndexe = ceil(interp1(tUnique, iTimeUnique, currentLogTime));
+        
+        axes(handles.Graph); 
+        if ~isnan(currIndexe)
+            if onlyMarker == 0
+                randomColor = rand(1,3); 
+                hold on; 
+                    hLine = plot(handles.loadedLog.t, plotValue, 'Color', randomColor, 'DisplayName', sprintf('%s Signal', currSignal));
+                hold off;
+            end
+            set(handles.markerPlot, 'XData', handles.loadedLog.t(currIndexe), 'YData', plotValue(currIndexe), 'DisplayName', 'Current Marker');
+        end
+        legend(handles.Graph, 'AutoUpdate', 'on', 'TextColor', 'white'); 
+    else
+        error('Wrong signal selected!');
+    end
+end
+```
+
+![mul1](C:\Users\p126620\OneDrive - Alliance\Bureau\DEV LOG\assets\mul1.png)
+
+However, this solution was quickly rejected because it could not accurately adjust the parameters of the plot, nor could it clear the already plotted signals. It was unable to be a qualified solution. After exchanging ideas with my colleague, he wanted me to modify the GUI of the application and add a new panel, known as uitable, to implement these functions.This would involve modifications to the GUI and several callback functions, and as I have not previously developed a responsive application, this would definitely be a huge challenge for me.
+
+### Redesigning GUI
+
+As you can see, the GUI for PostTagging was designed in GUIDE. So I redesigned it in GUIDE.
+Firstly, I simplified the Test Capsule Panel in the top left corner to make it more compact, reducing the size of the buttons and removing unnecessary text. Space was saved to provide more room for the signal list and the uitable.
+I also optimised the interaction logic of the Search Signal box. I pre-set it to be non-editable in GUIDE, and when the user clicks on it, the text inside is cleared and then made it editable. In this way, the user doesn't need to erase the text before searching.
+I have also updated the text on the right side of the indicator to use Fusion, Bosch FrRad, ZF FrCam, Conti FrRad, Valeo FrCam instead of the previous names.
+The most important part is the new UITable in the bottom left corner. I designed it as 3 columns, the first column is used to control whether the signal plot is visible or not, which is equivalent to a toggle switch when clicked, the second column is used to show the colour of the signal's plot, which can be customised by clicking on it, and the third column shows the name of the signal, which can be deleted from the table when clicked.
+
+![image-20240704143937103](C:\Users\p126620\OneDrive - Alliance\Bureau\DEV LOG\assets\image-20240704143937103.png)
+
+### Adding new signal
+When the user selects a signal from the existing `listsignaux`, the signal is sent directly to the `refreshGraph` function as a `currsignal` to update the graph, this logic is located in the callback function of the `listsignaux` component.
+I modified the callback function not to draw the signal selected by the user directly, but to import it into the table, i.e. `handles.uitable1.Data`.
+When first importing, the table will be initialised if it is empty. The first column is filled with `X` by default, indicating that the signal is visible. The second column is filled in by looping through the default colors I've set. The third column is filled with the signal names.
+
+The function `listsignaux_Callback(hObject, eventdata, handles)` in 234^th^ line of `postTagging_gui.m`:
+
+```matlab
+% --- Executes on selection change in listsignaux.
+function listsignaux_Callback(hObject, eventdata, handles)
+global currSignal
+currSignalNames = get(hObject,'String');
+currSignalIndex = get(hObject,'Value');
+currSignal = currSignalNames{currSignalIndex};
+
+tableData = get(handles.uitable1, 'Data');
+colors = {'red', 'green', 'blue', 'cyan', 'magenta', 'yellow', 'black', 'white'}; % Defaut colors
+if isempty(tableData{1, 3}) % initialize table data if empty
+    tableData = cell(1, 3); 
+    tableData{1, 1} = 'X'; 
+    tableData{1, 2} = colors{1}; 
+    tableData{1, 3} = currSignal; 
+else
+    if size(tableData, 2) < 3
+        tableData(:, 3) = {[]}; 
+    end
+    newRow = size(tableData, 1) + 1; % populate the table with new signals
+    tableData{newRow, 1} = 'X'; 
+    colorIndex = mod(newRow - 1, length(colors)) + 1; % cycle the defaut colors
+    tableData{newRow, 2} = colors{colorIndex}; 
+    tableData{newRow, 3} = currSignal; 
+end
+set(handles.uitable1, 'Data', tableData);
+
+handles = refreshGraph(handles); % refresh the plot
+drawnow;
+```
+
+### UITable interaction design
+
+UITable interaction is implemented in its cell selection callback function.
+When the user clicks on any cell in the table, the function gets the row and column of the cell.
+
+- If the user clicks on the first column, then the data in that cell is toggled between `X` and ` `.
+
+- If the user clicks on the second column, the matlab's built-in colour editor uisetcolor is used to allow the user to customise the color, which is then converted to the [R,G,B] format to be stored in the table, so that it can be correctly recognised by the `plotline`, along with the default assigned colors.
+
+  <img src="C:\Users\p126620\OneDrive - Alliance\Bureau\DEV LOG\assets\image-20240704161105081.png" alt="image-20240704161105081" style="zoom:50%;" />
+
+- If the user clicks on the third column, the row is deleted.
+
+The table data is then saved and the plot is refreshed.
+
+The function `uitable1_CellSelectionCallback(hObject, eventdata, handles)` in 1397^th^ line of `postTagging_gui.m`:
+
+```matlab
+function uitable1_CellSelectionCallback(hObject, eventdata, handles)
+    data = get(hObject, 'Data');
+    if isempty(eventdata.Indices)
+        return;
+    end
+
+    row = eventdata.Indices(1);
+    col = eventdata.Indices(2);
+
+    if col == 1 % Click first col to deactivate plot
+        currentValue = data{row, col};
+        if strcmp(currentValue, 'X')
+            data{row, col} = '';
+        else
+            data{row, col} = 'X';
+        end
+    end
+        
+    if col == 2 % click second col to modify color
+        colorValue = uisetcolor;
+        colorStr = ['[', num2str(colorValue(1)), ', ', num2str(colorValue(2)), ', ', num2str(colorValue(3)), ']'];
+        data{row, col} = colorStr;
+    end
+    
+    if col == 3 % click third col to clear the row
+        if size(data, 1) > 1 % Check if more than one row is left
+            data(row, :) = [];
+        end
+    end
+    
+    set(hObject, 'Data', data);
+    handles = refreshGraph(handles); % Refresh the plot when table changes
+```
+
+### Multiplotting
+
+Drawing multiple signals at the same time and refreshing them in real time was the most difficult part, and it stuck me for weeks. Even though the code to be written is not complex, it is time consuming to understand and orientate myself in these large code files.
+The `refreshGraph` function was designed to carry a lot of responsibility, and it originally had three modes of operation: it could refresh only the signal plot, it could refresh the marker, and it could refresh the TAG_ACC as well.
+Among them, the refreshing signal plotting relies on line 111 of `postTagging_gui.m` to initialise a lineplot and set its style in advance.
+
+```matlab
+handles.linePlot = plot(NaN,NaN,'LineStyle','-','Color',[0,1,1],'LineWidth',1,'Parent',handles.Graph,'HitTest','off');
+```
+
+Then in the `refreshGraph` function, the `XData` and `YData` in it are processed and updated separately to complete the refresh.
+In order to implement multiplotting function, I have tried various methods. For example, creating or deleting multiple plotlines in the refreshGraph function, or creating an array of plotlines, and so on. All of them failed in the end.
+Finally, I found a feasible solution, which is to initialise the `YData` as an empty array arranged vertically (not horizontally) when initialising the plotline. Then update these `YData` in `refreshGraph`.
+
+<img src="C:\Users\p126620\OneDrive - Alliance\Bureau\DEV LOG\assets\image-20240704162950580.png" alt="image-20240704162950580" style="zoom:40%;" />
+
+I initialised 20 `YData` as an example, which should be enough.
+
+The 111^th^ line of `postTagging_gui.m`:
+
+```matlab
+handles.linePlot = plot(NaN,[NaN;NaN;NaN;NaN;NaN;NaN;NaN;NaN;NaN;NaN;NaN;NaN;NaN;NaN;NaN;NaN;NaN;NaN;NaN;NaN],'LineStyle','-','Color',[0,1,1],'LineWidth',1,'Parent',handles.Graph,'HitTest','off');
+```
+
+
+
+Then we will need to modify the logic of `refreshGraph`, we have to clean up all the previous `YData` and `XData`. then organise the data of the table into several arrays: `signal`, `color`, `plotvaluesignal`, `visible`. then use a `for` loop to update these `YData`.
+
+The code of `refreshGraph.m`:
+
+```matlab
+% this function is intended to refresh the graph axes
+function handles = refreshGraph(handles,onlyMarker)
+    if nargin<2
+        onlyMarker = 0;
+    end
+    global currSignal
+    global currTime
+    plotValue = handles.loadedLog.(currSignal);
+    if size(handles.loadedLog.t,1) == size(plotValue,1)
+        currentLogTime = round(currTime-handles.vCont.t0+handles.loadedLog.t(1),3);
+        [tUnique, iTimeUnique, iIndexUnique] = unique(handles.loadedLog.t);
+        currIndexe = ceil(interp1(tUnique,iTimeUnique,currentLogTime));
+        if ~isnan(currIndexe)
+            if onlyMarker == 0 % REFRESH SIGNALS PLOT
+                for i = 1:20 % Clear the plot first
+                set(handles.linePlot(i), 'XData', NaN, ...
+                                         'YData', NaN, ...
+                                         'Visible', 'on');
+                end
+                data = handles.uitable1.Data;
+                numRows = size(data, 1);
+                signal = cell(numRows, 1);
+                color = cell(numRows, 1);
+                plotvaluesignal = cell(numRows, 1);
+                visible = cell(numRows, 1);
+                for i = 1:numRows
+                    signal{i} = data{i, 3}; %Update signals'name
+                    color{i} = data{i, 2}; %Update plot colors
+                    if strcmp(data{i, 1}, 'X') %Update plot status
+                        visible{i} = 'on';
+                    else
+                        visible{i} = 'off';
+                    end
+                    plotvaluesignal{i} = handles.loadedLog.(signal{i});
+                    set(handles.linePlot(i), 'XData', handles.loadedLog.t, ... %numbers of lines, check int code line111 in postTagging_gui.m
+                                             'YData', plotvaluesignal{i}, ...
+                                             'Visible', visible{i},...
+                                             'Color',color{i});
+                end
+            end
+            set(handles.markerPlot,'XData',handles.loadedLog.t(currIndexe),... % Update marker
+                                    'YData',plotValue(currIndexe));
+        end
+    else
+        error('Wrong signal selected !');
+    end
+end
+```
+
+Finally, we need to call the `refreshGraph` function in the previously mentioned `listsignaux_Callback` and `uitable1_CellSelectionCallback` to refresh the signal plot in real time.
+The final result is shown below.
+
+![image-20240704143753556](C:\Users\p126620\OneDrive - Alliance\Bureau\DEV LOG\assets\image-20240704143753556.png)
+
+### Bug fix
+
+Based on trial feedback from a colleague, a bug was found where contexte video was not playing properly. I located that this bug is caused by the multiplot features.
+Only when the user opens PostTagging and switches to contexte video without selecting any signal, then the programme will call refreshGraph once, but the UITable is still an empty table, which causes the graph refresh problem.
+Although the program has avoided this situation by various means, it can still be triggered by unintended operations. Once the problem was located, it wasn't too complicated to solve. Just add `if ~isempty(data{1, 3})` `...` `end`so that when the table is empty, only the YData is cleared and the subsequent operation is skipped.
+
+The code of `refreshGraph.m` is updated:
+
+```matlab
+% this function is intended to refresh the graph axes
+function handles = refreshGraph(handles,onlyMarker)
+    if nargin<2
+        onlyMarker = 0;
+    end
+    global currSignal
+    global currTime
+    plotValue = handles.loadedLog.(currSignal);
+    if size(handles.loadedLog.t,1) == size(plotValue,1)
+        currentLogTime = round(currTime-handles.vCont.t0+handles.loadedLog.t(1),3);
+        [tUnique, iTimeUnique, iIndexUnique] = unique(handles.loadedLog.t);
+        currIndexe = ceil(interp1(tUnique,iTimeUnique,currentLogTime));
+        if ~isnan(currIndexe)
+            if onlyMarker == 0 % REFRESH SIGNALS PLOT
+                for i = 1:20 % Clear the plot first
+                set(handles.linePlot(i), 'XData', NaN, ...
+                                         'YData', NaN, ...
+                                         'Visible', 'on');
+                end
+                data = handles.uitable1.Data;
+                if ~isempty(data{1, 3})
+                    numRows = size(data, 1);
+                    signal = cell(numRows, 1);
+                    color = cell(numRows, 1);
+                    plotvaluesignal = cell(numRows, 1);
+                    visible = cell(numRows, 1);
+                    for i = 1:numRows
+                        signal{i} = data{i, 3}; %Update signals'name
+                        color{i} = data{i, 2}; %Update plot colors
+                        if strcmp(data{i, 1}, 'X') %Update plot status
+                            visible{i} = 'on';
+                        else
+                            visible{i} = 'off';
+                        end
+                        plotvaluesignal{i} = handles.loadedLog.(signal{i});
+                        set(handles.linePlot(i), 'XData', handles.loadedLog.t, ... %numbers of lines, check int code line111 in postTagging_gui.m
+                                                 'YData', plotvaluesignal{i}, ...
+                                                 'Visible', visible{i},...
+                                                 'Color',color{i});
+                    end
+                end
+            end
+            set(handles.markerPlot,'XData',handles.loadedLog.t(currIndexe),... % Update marker
+                                    'YData',plotValue(currIndexe));
+        end
+    else
+        error('Wrong signal selected !');
+    end
+end
+```
+
+## Development of capsule importer tool
 
